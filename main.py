@@ -1,28 +1,35 @@
-import os
-import glob
+from flask import Flask, jsonify
+from flask_restful import Api, Resource
+from apscheduler.schedulers.background import BackgroundScheduler
+
+import requests
+import main
 import time
 
-os.system('modprobe w1-gpio')
-os.system('modprobe w1-therm')
+app = Flask(__name__)
+api = Api(app)
 
-base_dir = '/sys/bus/w1/devices/'
-device_folder = glob.glob(base_dir + '28*')[0]
-device_file = device_folder + '/w1_slave'
+def sendTemp():
+    temp = main.read_temp()
+    dictToSend = {'temp': temp[1], 'timestamp': time.time() }
+    res = requests.post('http://192.168.0.11:5022/saveTemp', json=dictToSend)
+    print('response from server:',res.text)
 
-def read_temp_raw():
-    f = open(device_file, 'r')
-    lines = f.readlines()
-    f.close()
-    return lines
+scheduler = BackgroundScheduler()
+job = scheduler.add_job(sendTemp, 'interval', minutes=1)
+scheduler.start()
 
-def read_temp():
-    lines = read_temp_raw()
-    while lines[0].strip()[-3:] != 'YES':
-        time.sleep(0.2)
-        lines = read_temp_raw()
-    equals_pos = lines[1].find('t=')
-    if equals_pos != -1:
-        temp_string = lines[1][equals_pos+2:]
-        temp_c = float(temp_string) / 1000.0
-        temp_f = temp_c * 9.0 / 5.0 + 32.0
-        return temp_c, temp_f
+class CurrentTemp(Resource):
+    def get(self):
+        temp = main.read_temp()
+        return jsonify(c=temp[0],f=temp[1])
+
+api.add_resource(CurrentTemp, '/current')
+
+if __name__ == "__main__":
+    app.run(debug=True,host='0.0.0.0')
+
+
+
+
+    
